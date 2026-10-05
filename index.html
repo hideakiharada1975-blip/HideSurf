@@ -1,0 +1,1237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>湘南サーフログ＆予報</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js for Tide Graph -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-sky-700 text-white shadow-md sticky top-0 z-50">
+        <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa-solid fa-water text-xl text-sky-200"></i>
+                <h1 class="font-bold text-lg tracking-wide">Shonan Surf Log</h1>
+            </div>
+            <div id="header-spot-badge" class="text-xs bg-sky-800 px-2.5 py-1 rounded-full text-sky-100 flex items-center space-x-1 shadow-inner cursor-pointer" onclick="switchTab('settings')">
+                <i class="fa-solid fa-location-dot text-sky-300"></i>
+                <span id="active-spot-badge-name">鎌倉・由比ガ浜</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 max-w-md w-full mx-auto px-4 py-4 pb-24">
+        
+        <!-- ================= 予報タブ ================= -->
+        <div id="forecast-tab" class="tab-content active space-y-4">
+            
+            <!-- スポット選択バー -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-location-dot text-sky-600"></i>
+                    <label class="text-xs font-bold text-slate-700">サーフスポット</label>
+                </div>
+                <select id="forecast-spot-select" onchange="onSpotSelectChange(this.value)" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:border-sky-500 min-w-[160px]">
+                    <!-- 動的に挿入 -->
+                </select>
+            </div>
+
+
+            <!-- サマリーカード -->
+            <div class="bg-gradient-to-r from-sky-500 to-blue-600 rounded-2xl p-4 text-white shadow-lg relative overflow-hidden">
+                <div class="absolute right-[-20px] bottom-[-20px] opacity-10 text-9xl">
+                    <i class="fa-solid fa-water"></i>
+                </div>
+                <div class="flex justify-between items-center">
+                    <div>
+                        <span class="text-xs uppercase bg-white/20 px-2 py-0.5 rounded-full tracking-wider font-semibold">Live & Forecast</span>
+                        <h2 id="current-spot-name" class="text-xl font-bold mt-1">鎌倉・由比ガ浜</h2>
+                        <div class="flex items-center gap-3 mt-2 text-xs text-white/90">
+                            <span class="flex items-center gap-1"><i class="fa-solid fa-sunrise text-amber-200"></i> Sunrise <span id="sunrise-time">--:--</span></span>
+                            <span class="flex items-center gap-1"><i class="fa-solid fa-sunset text-orange-200"></i> Sunset <span id="sunset-time">--:--</span></span>
+                        </div>
+                    </div>
+                    <button onclick="fetchForecastData()" class="bg-white/20 hover:bg-white/30 text-white text-xs px-3 py-2 rounded-xl transition flex items-center space-x-1.5 shadow-sm">
+                        <i class="fa-solid fa-rotate-right" id="refresh-icon"></i>
+                        <span>更新</span>
+                    </button>
+                </div>
+            </div>
+
+
+            <!-- 潮位グラフカード -->
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="font-bold text-sm text-slate-700 flex items-center space-x-2">
+                        <i class="fa-solid fa-water text-sky-600"></i>
+                        <span>潮位グラフ｜<span id="tide-chart-date-label" class="text-sky-600">-</span></span>
+                    </h3>
+                    <span id="tide-summary-text" class="text-[10px] bg-sky-50 text-sky-700 px-2 py-0.5 rounded-full font-medium">大潮</span>
+                </div>
+                <!-- スポット映像ボタン -->
+                <div class="mb-3">
+                    <button onclick="openCameraModal()"
+                        class="flex items-center space-x-1.5 text-xs bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 px-3 py-1.5 rounded-lg transition font-medium">
+                        <i class="fa-solid fa-video"></i>
+                        <span>スポットの映像を見る</span>
+                    </button>
+                </div>
+                <div class="relative h-44 w-full">
+                    <canvas id="tideChart"></canvas>
+                </div>
+
+
+                <!-- 日付ナビゲーション + 6時間コンディションパネル -->
+                <div class="mt-3">
+                    <!-- 日付ナビゲーションバー -->
+                    <div class="flex items-center justify-between mb-2">
+                        <button id="prev-date-btn" onclick="shiftConditionDate(-1)"
+                            class="flex items-center space-x-1 text-xs text-sky-600 bg-sky-50 hover:bg-sky-100 px-2.5 py-1.5 rounded-lg transition font-medium">
+                            <i class="fa-solid fa-chevron-left text-[10px]"></i>
+                            <span>前日</span>
+                        </button>
+                        <span id="condition-date-label" class="text-xs font-bold text-slate-700"></span>
+                        <button id="next-date-btn" onclick="shiftConditionDate(1)"
+                            class="flex items-center space-x-1 text-xs text-sky-600 bg-sky-50 hover:bg-sky-100 px-2.5 py-1.5 rounded-lg transition font-medium">
+                            <span>翌日</span>
+                            <i class="fa-solid fa-chevron-right text-[10px]"></i>
+                        </button>
+                    </div>
+
+                    <!-- 6時間スクロールパネル -->
+                    <div class="relative">
+                        <!-- 左スクロールボタン -->
+                        <button onclick="scrollConditionPanel(-1)"
+                            class="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-white shadow border border-slate-200 rounded-full w-6 h-6 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-300 transition">
+                            <i class="fa-solid fa-chevron-left text-[9px]"></i>
+                        </button>
+
+                        <div id="condition-panel-wrapper" class="overflow-hidden mx-7">
+                            <div id="condition-panel" class="flex transition-transform duration-300 ease-in-out gap-2">
+                                <!-- JS で動的生成 -->
+                            </div>
+                        </div>
+
+                        <!-- 右スクロールボタン -->
+                        <button onclick="scrollConditionPanel(1)"
+                            class="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-white shadow border border-slate-200 rounded-full w-6 h-6 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-300 transition">
+                            <i class="fa-solid fa-chevron-right text-[9px]"></i>
+                        </button>
+                    </div>
+
+                    <!-- ページドット -->
+                    <div id="condition-dots" class="flex justify-center mt-2 gap-1"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 記録・タイムラインタブ ================= -->
+        <div id="log-tab" class="tab-content space-y-4">
+            <div class="flex justify-between items-center">
+                <h2 class="font-bold text-base text-slate-800">セッション・ログ一覧</h2>
+                <button onclick="openLogModal()" class="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-medium shadow transition flex items-center space-x-1">
+                    <i class="fa-solid fa-plus"></i>
+                    <span>新規記録</span>
+                </button>
+            </div>
+
+            <div id="log-list-container" class="space-y-3">
+                <!-- 動的に挿入 -->
+            </div>
+        </div>
+
+        <!-- ================= 設定タブ (スポット管理) ================= -->
+        <div id="settings-tab" class="tab-content space-y-4">
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                <h2 class="font-bold text-base text-slate-800 mb-1 flex items-center space-x-2">
+                    <i class="fa-solid fa-map-location-dot text-sky-600"></i>
+                    <span>サーフスポット管理</span>
+                </h2>
+                <p class="text-xs text-slate-400 mb-4">アプリで予報を取得するサーフスポットを追加・編集・削除できます。</p>
+
+                <!-- スポット追加フォーム -->
+                <form id="spot-form" onsubmit="saveNewSpot(event)" class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3 mb-4">
+                    <h3 class="text-xs font-bold text-slate-700">スポット新規追加</h3>
+                    <div>
+                        <label class="block text-[10px] font-semibold text-slate-500 mb-1">スポット名</label>
+                        <input type="text" id="new-spot-name" placeholder="例: 茅ヶ崎パーク" required class="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-sky-500">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-500 mb-1">緯度 (Latitude)</label>
+                            <input type="number" step="0.001" id="new-spot-lat" placeholder="35.320" required class="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-sky-500">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-semibold text-slate-500 mb-1">経度 (Longitude)</label>
+                            <input type="number" step="0.001" id="new-spot-lon" placeholder="139.400" required class="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:border-sky-500">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white py-2 rounded-lg text-xs font-medium transition shadow-sm">
+                        スポットを追加
+                    </button>
+                </form>
+
+                <!-- 登録済みスポット一覧 -->
+                <div class="space-y-2" id="spots-management-list">
+                    <!-- 動的挿入 -->
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+                <h3 class="font-bold text-sm text-slate-700">データ初期化・リセット</h3>
+                <button onclick="resetDefaultSpots()" class="w-full border border-sky-200 text-sky-700 hover:bg-sky-50 py-2 rounded-xl text-xs font-medium transition mb-2">
+                    初期スポットに戻す
+                </button>
+                <button onclick="clearAllData()" class="w-full border border-rose-200 text-rose-600 hover:bg-rose-50 py-2 rounded-xl text-xs font-medium transition">
+                    全セッション記録をリセット
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <nav class="bg-white border-t border-slate-200 fixed bottom-0 left-0 right-0 z-40 max-w-md mx-auto">
+        <div class="grid grid-cols-3 py-2 px-4 text-center">
+            <button onclick="switchTab('forecast')" id="nav-forecast" class="nav-btn flex flex-col items-center justify-center text-sky-600 transition">
+                <i class="fa-solid fa-cloud-sun text-lg"></i>
+                <span class="text-[10px] font-medium mt-1">波・風予報</span>
+            </button>
+            <button onclick="switchTab('log')" id="nav-log" class="nav-btn flex flex-col items-center justify-center text-slate-400 hover:text-slate-600 transition">
+                <i class="fa-solid fa-book-open text-lg"></i>
+                <span class="text-[10px] font-medium mt-1">セッションログ</span>
+            </button>
+            <button onclick="switchTab('settings')" id="nav-settings" class="nav-btn flex flex-col items-center justify-center text-slate-400 hover:text-slate-600 transition">
+                <i class="fa-solid fa-gear text-lg"></i>
+                <span class="text-[10px] font-medium mt-1">設定</span>
+            </button>
+        </div>
+    </nav>
+
+    <div id="log-modal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex justify-between items-center z-10">
+                <h3 class="font-bold text-base text-slate-800">セッション記録の追加</h3>
+                <button onclick="closeLogModal()" class="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form id="log-form" onsubmit="saveLog(event)" class="p-5 space-y-4">
+                <div class="bg-sky-50 border border-sky-100 rounded-xl p-3 flex justify-between items-center">
+                    <div>
+                        <p class="text-xs font-semibold text-sky-800">現在の予報値を自動反映できます</p>
+                        <p class="text-[10px] text-sky-600">選択スポット＆日付の予報をセット</p>
+                    </div>
+                    <button type="button" onclick="applyCurrentForecastToForm()" class="bg-sky-600 hover:bg-sky-700 text-white text-xs px-3 py-1.5 rounded-lg shadow transition">
+                        反映する
+                    </button>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">日時</label>
+                    <input type="datetime-local" id="form-date" required class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-sky-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">サーフスポット</label>
+                    <select id="form-spot" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-sky-500">
+                        <!-- 動的に挿入 -->
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">波のサイズ</label>
+                        <select id="form-wave-size" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-sky-500">
+                            <option value="ヒザ下">ヒザ下 (0.3m〜)</option>
+                            <option value="モモ・コシ">モモ・コシ (0.5〜0.8m)</option>
+                            <option value="ハラ・ムネ">ハラ・ムネ (1.0〜1.2m)</option>
+                            <option value="カタ・アタマ">カタ・アタマ (1.5m〜)</option>
+                            <option value="オーバーヘッド">オーバーヘッド+</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 mb-1">風のコンディション</label>
+                        <select id="form-wind-cond" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-sky-500">
+                            <option value="無風・クリーン">無風・クリーン</option>
+                            <option value="弱オフショア（面良し）">弱オフショア（面良し）</option>
+                            <option value="強オフショア">強オフショア</option>
+                            <option value="オンショア（ざわつき）">オンショア（ざわつき）</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">使用ボード</label>
+                    <input type="text" id="form-board" placeholder="例: ショート 5'11\" / ファン 7'2\"" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-sky-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">メモ・感想</label>
+                    <textarea id="form-memo" rows="3" placeholder="セットは形良く、レギュラー中心に乗れた。" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm focus:outline-none focus:border-sky-500"></textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 mb-1">写真（アップロード）</label>
+                    <input type="file" id="form-photo" accept="image/*" onchange="previewImage(event)" class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100">
+                    <div id="image-preview-container" class="mt-2 hidden">
+                        <img id="image-preview" src="" alt="プレビュー" class="w-full h-32 object-cover rounded-xl border border-slate-200">
+                    </div>
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-medium py-3 rounded-xl shadow-md transition text-sm">
+                        記録を保存する
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 初期デフォルトスポット定義
+        const DEFAULT_SPOTS = [
+            { id: 'yuigahama', name: '鎌倉・由比ガ浜', lat: 35.310, lon: 139.547 },
+            { id: 'kamakOko', name: '鎌倉高校前', lat: 35.305, lon: 139.510 },
+            { id: 'shichirigahama', name: '七里ケ浜', lat: 35.304, lon: 139.525 },
+            { id: 'kugenuma', name: '鵠沼海岸', lat: 35.312, lon: 139.475 },
+            { id: 'zushi', name: '逗子海岸', lat: 35.296, lon: 139.575 }
+        ];
+
+        let spots = [];
+        let currentSpot = null;
+        let selectedDate = '';
+        let tideChartInstance = null;
+        let latestHourlyCache = [];
+        let weeklyCache = {};            // 1週間分の予報データキャッシュ { 'YYYY-MM-DD': [...] }
+        let sunTimesCache = {};
+
+        // コンディションパネル用
+        let conditionDate = '';          // 表示中の日付 (YYYY-MM-DD)
+        let conditionOffset = 0;         // 6時間単位のスクロールオフセット (0〜3)
+        let conditionHourlyCache = [];   // conditionDate用キャッシュ
+
+        window.onload = function() {
+            initSpots();
+            initDatePickers();
+            fetchForecastData();
+            loadLogs();
+            renderSpotsManagement();
+        };
+
+        // スポットのロードと初期化
+        function initSpots() {
+            const savedSpots = localStorage.getItem('shonan_surf_spots');
+            if (savedSpots) {
+                try {
+                    spots = JSON.parse(savedSpots);
+                } catch(e) {
+                    spots = DEFAULT_SPOTS;
+                }
+            } else {
+                spots = DEFAULT_SPOTS;
+                localStorage.setItem('shonan_surf_spots', JSON.stringify(spots));
+            }
+
+            let addedDefaultSpot = false;
+            DEFAULT_SPOTS.forEach(defaultSpot => {
+                if (!spots.some(spot => spot.id === defaultSpot.id)) {
+                    spots.push(defaultSpot);
+                    addedDefaultSpot = true;
+                }
+            });
+            if (addedDefaultSpot) {
+                localStorage.setItem('shonan_surf_spots', JSON.stringify(spots));
+            }
+
+            if (spots.length > 0) {
+                currentSpot = spots[0];
+            }
+            updateSpotDropdowns();
+        }
+
+        // 日付ヘルパー関数（タイムゾーンズレ防止）
+        function formatLocalDate(dateObj) {
+            const y = dateObj.getFullYear();
+            const m = String(dateObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dateObj.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function addDays(dateStr, days) {
+            const parts = dateStr.split('-').map(Number);
+            const dt = new Date(parts[0], parts[1] - 1, parts[2] + days);
+            return formatLocalDate(dt);
+        }
+
+        function initDatePickers() {
+            const today = new Date();
+            const todayStr = formatLocalDate(today);
+            const maxStr = addDays(todayStr, 7);
+
+            selectedDate = todayStr;
+            conditionDate = todayStr;
+            
+            const picker = document.getElementById('forecast-date-picker');
+            if (picker) {
+                picker.value = todayStr;
+                picker.min = todayStr;
+                picker.max = maxStr;
+            }
+            updateConditionDateLabel();
+            initDatetimeField();
+        }
+
+        function initDatetimeField() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('form-date').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        // タブ切替
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId + '-tab').classList.add('active');
+
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('text-sky-600');
+                btn.classList.add('text-slate-400');
+            });
+            document.getElementById('nav-' + tabId).classList.remove('text-slate-400');
+            document.getElementById('nav-' + tabId).classList.add('text-sky-600');
+            
+            if (tabId === 'settings') {
+                renderSpotsManagement();
+            }
+        }
+
+        // ドロップダウン更新
+        function updateSpotDropdowns() {
+            const forecastSelect = document.getElementById('forecast-spot-select');
+            const formSelect = document.getElementById('form-spot');
+            
+            forecastSelect.innerHTML = '';
+            formSelect.innerHTML = '';
+
+            spots.forEach(spot => {
+                const opt1 = document.createElement('option');
+                opt1.value = spot.id;
+                opt1.textContent = spot.name;
+                if (currentSpot && spot.id === currentSpot.id) opt1.selected = true;
+                forecastSelect.appendChild(opt1);
+
+                const opt2 = document.createElement('option');
+                opt2.value = spot.name;
+                opt2.textContent = spot.name;
+                formSelect.appendChild(opt2);
+            });
+
+            if (currentSpot) {
+                document.getElementById('current-spot-name').innerText = currentSpot.name;
+                document.getElementById('active-spot-badge-name').innerText = currentSpot.name;
+            }
+        }
+
+        function onSpotSelectChange(spotId) {
+            const found = spots.find(s => s.id === spotId);
+            if (found) {
+                currentSpot = found;
+                document.getElementById('current-spot-name').innerText = currentSpot.name;
+                document.getElementById('active-spot-badge-name').innerText = currentSpot.name;
+                fetchForecastData();
+            }
+        }
+
+        function onDateChange(dateStr) {
+            selectedDate = dateStr;
+            conditionDate = dateStr;
+            conditionOffset = 0;
+            if (weeklyCache[selectedDate]) {
+                applyDateForecast(selectedDate);
+            } else {
+                fetchForecastData();
+            }
+        }
+
+        // 予報データの取得 (Open-Meteo Marine API + Weather API) — 1週間（7日間）分一括取得
+        async function fetchForecastData() {
+            const refreshIcon = document.getElementById('refresh-icon');
+            if (refreshIcon) refreshIcon.classList.add('fa-spin');
+
+            const baseDate = selectedDate || formatLocalDate(new Date());
+            const startDate = baseDate;
+            const endDate = addDays(baseDate, 7);
+
+
+            try {
+                // timezone=Asia/Tokyo で日本時間の0〜23時に揃え、wind_speed_unit=ms でm/s単位を指定
+                const marineUrl = `https://marine-api.open-meteo.com/v1/marine?latitude=${currentSpot.lat}&longitude=${currentSpot.lon}&hourly=wave_height,wave_direction,wave_period,sea_level_height_msl&start_date=${startDate}&end_date=${endDate}&timezone=Asia%2FTokyo`;
+                const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${currentSpot.lat}&longitude=${currentSpot.lon}&hourly=wind_speed_10m,wind_direction_10m,weather_code&daily=sunrise,sunset&wind_speed_unit=ms&start_date=${startDate}&end_date=${endDate}&timezone=Asia%2FTokyo`;
+
+                const [marineRes, weatherRes] = await Promise.all([
+                    fetch(marineUrl),
+                    fetch(weatherUrl)
+                ]);
+
+
+                const marineData = await marineRes.json();
+                const weatherData = await weatherRes.json();
+
+                processForecastPayload(marineData, weatherData, startDate, endDate);
+            } catch (e) {
+                console.warn('API取得エラー、フォールバックデータを生成します', e);
+                processForecastPayload(null, null, startDate, endDate);
+            } finally {
+                if (refreshIcon) refreshIcon.classList.remove('fa-spin');
+            }
+        }
+
+        // 予報データ解析＆キャッシュ構築 (7日分)
+        function processForecastPayload(marine, weather, startDate, endDate) {
+            weeklyCache = {};
+            sunTimesCache = {};
+
+            const dailyTimes = weather?.daily;
+            dailyTimes?.time?.forEach((date, index) => {
+                sunTimesCache[date] = {
+                    sunrise: dailyTimes.sunrise?.[index],
+                    sunset: dailyTimes.sunset?.[index]
+                };
+            });
+
+            const dateList = [];
+            let curStr = startDate;
+            while (curStr <= endDate) {
+                dateList.push(curStr);
+                curStr = addDays(curStr, 1);
+            }
+
+            dateList.forEach((dateStr, dayIdx) => {
+                const dayData = [];
+                const dayPhase = dayIdx * 0.8;
+                for (let h = 0; h < 24; h++) {
+                    const globalIdx = dayIdx * 24 + h;
+                    const hourStr = String(h).padStart(2, '0') + ':00';
+
+                    let wHeight = marine?.hourly?.wave_height?.[globalIdx];
+                    let wPeriod = marine?.hourly?.wave_period?.[globalIdx];
+                    let wSpeed  = weather?.hourly?.wind_speed_10m?.[globalIdx];
+                    let wDir    = weather?.hourly?.wind_direction_10m?.[globalIdx];
+                    let wCode   = weather?.hourly?.weather_code?.[globalIdx];
+
+                    if (wHeight === undefined || wHeight === null) {
+                        wHeight = 0.8 + Math.sin((h + dayIdx * 2) / 3) * 0.4;
+                    }
+                    if (wPeriod === undefined || wPeriod === null) wPeriod = 6 + (dayIdx % 3);
+                    if (wSpeed === undefined || wSpeed === null) wSpeed = 3.0 + Math.cos(h / 4) * 2.0;
+                    if (wDir === undefined || wDir === null) wDir = (45 + dayIdx * 30) % 360;
+                    if (wCode === undefined || wCode === null) {
+                        wCode = (wHeight > 1.5) ? 80 : (wSpeed > 6) ? 2 : (h >= 6 && h <= 17) ? 1 : 0;
+                    }
+
+                    // 潮位: APIの海面高度(sea_level_height_msl)がある場合はそれを優先、無ければ月齢天文潮汐モデル
+                    let tideM = marine?.hourly?.sea_level_height_msl?.[globalIdx];
+                    if (tideM === undefined || tideM === null || isNaN(tideM)) {
+                        // 月齢から潮汐振幅を推定（大潮は約0.8m、小潮は約0.3m）
+                        const moonAge = getMoonAge(dateStr);
+                        const amp = 0.55 + 0.35 * Math.cos((moonAge % 14.765) / 14.765 * 2 * Math.PI);
+                        tideM = 1.0 + amp * Math.sin(((h - 4.5) / 12.42) * 2 * Math.PI + (dayIdx * 0.84));
+                    } else {
+                        // 基準値に合わせて正の値（cm / m）に正規化
+                        tideM = tideM + 1.0; 
+                    }
+
+                    dayData.push({
+                        time: hourStr,
+                        waveHeight: Math.max(0.2, wHeight).toFixed(1),
+                        period: Math.round(wPeriod).toFixed(0),
+                        windSpeed: Math.max(0.1, wSpeed).toFixed(1),
+                        windDir: Math.round(wDir),
+                        tide: Math.max(0.1, tideM).toFixed(2),
+                        weatherCode: wCode
+                    });
+                }
+                weeklyCache[dateStr] = dayData;
+            });
+
+            if (!weeklyCache[selectedDate]) {
+                selectedDate = startDate;
+            }
+            conditionDate = selectedDate;
+            applyDateForecast(selectedDate);
+        }
+
+        // 指定日付のデータをサマリー・タイドグラフ・コンディションパネルすべてに反映
+        function applyDateForecast(dateStr) {
+            const dayData = weeklyCache[dateStr] || generateFallbackDay(dateStr);
+            latestHourlyCache = dayData;
+            conditionHourlyCache = dayData;
+            conditionDate = dateStr;
+            selectedDate = dateStr;
+
+            const picker = document.getElementById('forecast-date-picker');
+            if (picker && picker.value !== dateStr) {
+                picker.value = dateStr;
+            }
+
+            updateTideSummaryBadge(dateStr);
+            updateConditionDateLabel();
+            const sunTimes = sunTimesCache[dateStr];
+            document.getElementById('sunrise-time').textContent = sunTimes?.sunrise?.slice(11, 16) || '--:--';
+            document.getElementById('sunset-time').textContent = sunTimes?.sunset?.slice(11, 16) || '--:--';
+            renderTideChart(dayData);
+            renderConditionPanel();
+        }
+
+        // 月齢計算 (基準日 2000-01-06 朔)
+        function getMoonAge(dateStr) {
+
+            const parts = dateStr.split('-').map(Number);
+            const target = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12, 0, 0));
+            const epoch = new Date(Date.UTC(2000, 0, 6, 18, 14, 0)); // 2000年1月6日 新月
+            const diffDays = (target - epoch) / (1000 * 60 * 60 * 24);
+            const synodicMonth = 29.530588853;
+            let moonAge = (diffDays % synodicMonth + synodicMonth) % synodicMonth;
+            return moonAge;
+        }
+
+        // 月齢に基づく正確な潮名（大潮・中潮・小潮・長潮・若潮）の判定
+        function updateTideSummaryBadge(dateStr) {
+            const moonAge = getMoonAge(dateStr);
+            const m = Math.round(moonAge) % 30;
+            let tideName = '中潮';
+
+            if (m >= 28 || m <= 2 || (m >= 13 && m <= 16)) {
+                tideName = '大潮';
+            } else if ((m >= 3 && m <= 6) || (m >= 17 && m <= 20) || (m >= 26 && m <= 27) || (m >= 11 && m <= 12)) {
+                tideName = '中潮';
+            } else if ((m >= 7 && m <= 9) || (m >= 21 && m <= 23)) {
+                tideName = '小潮';
+            } else if (m === 10 || m === 24) {
+                tideName = '長潮';
+            } else if (m === 11 || m === 25) {
+                tideName = '若潮';
+            }
+
+            const badge = document.getElementById('tide-summary-text');
+            if (badge) {
+                badge.innerText = `${tideName} (月齢${moonAge.toFixed(1)})`;
+            }
+        }
+
+
+        // フォールバック用1日分データ生成
+        function generateFallbackDay(dateStr) {
+            return Array.from({length: 24}, (_, h) => ({
+                time: String(h).padStart(2, '0') + ':00',
+                waveHeight: (0.9 + Math.sin(h / 3) * 0.3).toFixed(1),
+                period: '7',
+                windSpeed: '3.5',
+                windDir: 45,
+                tide: (1.2 + 0.9 * Math.sin((h - 3) * Math.PI / 6)).toFixed(2),
+                weatherCode: (h >= 6 && h <= 17) ? 1 : 0
+            }));
+        }
+
+        // 日付シフト（前日・翌日）
+        async function shiftConditionDate(delta) {
+            const targetDate = addDays(conditionDate, delta);
+            conditionOffset = 0;
+
+            if (weeklyCache[targetDate]) {
+                applyDateForecast(targetDate);
+                return;
+            }
+
+            selectedDate = targetDate;
+            await fetchForecastData();
+        }
+
+        // 湘南海岸向け 風向・オンショア/オフショア判定関数
+        function getShoreInfo(windDir, windSpeed) {
+            const ws = parseFloat(windSpeed);
+            if (ws <= 1.0) {
+                return { label: '無風・微風', cls: 'text-sky-700 bg-sky-50 border border-sky-200' };
+            }
+            const deg = (windDir % 360 + 360) % 360;
+            // 湘南（南向き海岸）: 北系(315〜45)=オフショア, 南系(135〜225)=オンショア
+            if (deg >= 315 || deg <= 45) {
+                return { label: 'オフショア', cls: 'text-emerald-700 bg-emerald-50 border border-emerald-200' };
+            } else if (deg > 45 && deg < 80) {
+                return { label: 'サイドオフ', cls: 'text-teal-700 bg-teal-50 border border-teal-200' };
+            } else if (deg >= 80 && deg <= 100) {
+                return { label: 'サイド(東)', cls: 'text-slate-600 bg-slate-100 border border-slate-200' };
+            } else if (deg > 100 && deg < 135) {
+                return { label: 'サイドオン', cls: 'text-amber-700 bg-amber-50 border border-amber-200' };
+            } else if (deg >= 135 && deg <= 225) {
+                return { label: 'オンショア', cls: 'text-rose-700 bg-rose-50 border border-rose-200' };
+            } else if (deg > 225 && deg < 260) {
+                return { label: 'サイドオン', cls: 'text-amber-700 bg-amber-50 border border-amber-200' };
+            } else if (deg >= 260 && deg <= 280) {
+                return { label: 'サイド(西)', cls: 'text-slate-600 bg-slate-100 border border-slate-200' };
+            } else {
+                return { label: 'サイドオフ', cls: 'text-teal-700 bg-teal-50 border border-teal-200' };
+            }
+        }
+
+        // 風向きラベル変換
+        function windDirLabel(deg) {
+            const dirs = ['北','北北東','北東','東北東','東','東南東','南東','南南東','南','南南西','南西','西南西','西','西北西','北西','北北西'];
+            return dirs[Math.round(deg / 22.5) % 16];
+        }
+
+        // 天気コードを絵文字に変換
+        function getWeatherEmoji(code) {
+            if (code === 0)           return { emoji: '☀️', label: '快晴' };
+            if (code === 1)           return { emoji: '🌤️', label: '晴れ' };
+            if (code === 2)           return { emoji: '⛅', label: '薄曇り' };
+            if (code === 3)           return { emoji: '☁️', label: '曇り' };
+            if (code >= 45 && code <= 48) return { emoji: '🌫️', label: '霧' };
+            if (code >= 51 && code <= 57) return { emoji: '🌦️', label: '霧雨' };
+            if (code >= 61 && code <= 67) return { emoji: '🌧️', label: '雨' };
+            if (code >= 71 && code <= 77) return { emoji: '❄️', label: '雪' };
+            if (code >= 80 && code <= 82) return { emoji: '🌦️', label: 'にわか雨' };
+            if (code >= 95 && code <= 99) return { emoji: '⛈️', label: '雷雨' };
+            return { emoji: '🌤️', label: '晴れ' };
+        }
+
+        // コンディション評価ラベル
+        function getConditionBadge(waveHeight, windSpeed) {
+            const wh = parseFloat(waveHeight);
+            const ws = parseFloat(windSpeed);
+            if (wh >= 1.0 && wh <= 1.8 && ws <= 4) return { text: '◎ GOOD', cls: 'bg-emerald-100 text-emerald-700' };
+            if (wh >= 0.5 && ws <= 6)               return { text: '○ OK', cls: 'bg-sky-100 text-sky-700' };
+            if (ws > 8)                              return { text: '△ 強風', cls: 'bg-amber-100 text-amber-700' };
+            if (wh < 0.3)                            return { text: '✕ フラット', cls: 'bg-slate-100 text-slate-500' };
+            return                                          { text: '○ OK', cls: 'bg-sky-100 text-sky-700' };
+        }
+
+        // 日付ラベル更新
+        function updateConditionDateLabel() {
+            const parts = conditionDate.split('-').map(Number);
+            const d = new Date(parts[0], parts[1] - 1, parts[2]);
+            const days = ['日','月','火','水','木','金','土'];
+            const label = `${d.getMonth()+1}月${d.getDate()}日（${days[d.getDay()]}）`;
+            
+            const el = document.getElementById('condition-date-label');
+            if (el) el.textContent = label;
+            
+            const tideLabel = document.getElementById('tide-chart-date-label');
+            if (tideLabel) tideLabel.textContent = label;
+        }
+
+        // コンディションパネル内スクロール（6時間単位、同日内）
+        function scrollConditionPanel(delta) {
+            const maxOffset = 3; // 0〜3
+            conditionOffset = Math.max(0, Math.min(maxOffset, conditionOffset + delta));
+            updateConditionPanelTransform();
+            updateConditionDots();
+        }
+
+        // コンディションパネル描画（5:00スタート、6時間×4ページ）
+        function renderConditionPanel() {
+            const panel = document.getElementById('condition-panel');
+            if (!panel) return;
+            panel.innerHTML = '';
+
+            // 4ページ (6時間×4 = 24時間, 5:00起点)
+            // Page 0: 05:00 - 10:00
+            // Page 1: 11:00 - 16:00
+            // Page 2: 17:00 - 22:00
+            // Page 3: 23:00 - 04:00 (翌未明)
+            for (let page = 0; page < 4; page++) {
+                const pageEl = document.createElement('div');
+                pageEl.className = 'flex gap-2 flex-shrink-0';
+                pageEl.style.width = '100%';
+
+                for (let i = 0; i < 6; i++) {
+                    const hourIdx = (page * 6 + i + 5) % 24;
+                    const item = conditionHourlyCache[hourIdx];
+                    if (!item) continue;
+                    const wx = getWeatherEmoji(item.weatherCode);
+                    const cond = getConditionBadge(item.waveHeight, item.windSpeed);
+                    const shore = getShoreInfo(item.windDir, item.windSpeed);
+                    // 風向矢印の回転角度（風が吹いていく向き）
+                    const windArrowAngle = (item.windDir + 180) % 360;
+
+                    const card = document.createElement('div');
+                    card.className = 'flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-xl p-2 text-center flex flex-col items-center justify-between gap-1 shadow-xs';
+                    card.innerHTML = `
+                        <div class="text-[10.5px] font-bold text-slate-700 leading-tight">${item.time}</div>
+                        <div class="text-2xl leading-none my-0.5" title="${wx.label}">${wx.emoji}</div>
+                        <div class="text-[9.5px] text-slate-400 leading-none">${wx.label}</div>
+                        <div class="text-xs font-bold text-sky-700 leading-tight mt-1">🌊 ${item.waveHeight}m</div>
+                        
+                        <!-- 風向矢印 + 風速 -->
+                        <div class="flex items-center justify-center space-x-1 text-[10px] text-slate-700 font-semibold my-0.5" title="${windDirLabel(item.windDir)}の風 (${item.windDir}°)">
+                            <i class="fa-solid fa-arrow-up text-sky-600 text-[10px] transition-transform inline-block" style="transform: rotate(${windArrowAngle}deg);"></i>
+                            <span>${item.windSpeed}m/s</span>
+                        </div>
+                        
+                        <!-- オンショア / オフショア バッジ -->
+                        <div class="text-[9px] px-1.5 py-0.5 rounded-md font-bold ${shore.cls} leading-tight w-full truncate mt-0.5" title="${shore.label}">${shore.label}</div>
+                    `;
+                    pageEl.appendChild(card);
+
+                }
+
+                panel.appendChild(pageEl);
+            }
+
+            updateConditionPanelTransform();
+            updateConditionDots();
+        }
+
+
+
+        function updateConditionPanelTransform() {
+            const panel = document.getElementById('condition-panel');
+            if (panel) panel.style.transform = `translateX(-${conditionOffset * 100}%)`;
+        }
+
+        function updateConditionDots() {
+            const dotsEl = document.getElementById('condition-dots');
+            if (!dotsEl) return;
+            dotsEl.innerHTML = '';
+            for (let i = 0; i < 4; i++) {
+                const dot = document.createElement('div');
+                dot.className = `w-1.5 h-1.5 rounded-full transition-all ${i === conditionOffset ? 'bg-sky-500 w-3' : 'bg-slate-300'}`;
+                dotsEl.appendChild(dot);
+            }
+        }
+
+        // タイドグラフ描画 (Chart.js)
+        function renderTideChart(hourlyData) {
+            const ctx = document.getElementById('tideChart').getContext('2d');
+            const labels = hourlyData.map(d => d.time);
+            const dataValues = hourlyData.map(d => parseFloat(d.tide));
+
+            if (tideChartInstance) {
+                tideChartInstance.destroy();
+            }
+
+            tideChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '潮位 (m)',
+                        data: dataValues,
+                        borderColor: '#0284c7',
+                        backgroundColor: 'rgba(2, 132, 199, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 2,
+                        pointBackgroundColor: '#0284c7'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            grid: { display: false },
+                            ticks: { font: { size: 10 }, maxTicksLimit: 8 }
+                        },
+                        y: {
+                            grid: { color: '#f1f5f9' },
+                            ticks: { font: { size: 10 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        // スポット管理機能
+        function renderSpotsManagement() {
+            const container = document.getElementById('spots-management-list');
+            container.innerHTML = '';
+
+            spots.forEach(spot => {
+                const isDefault = DEFAULT_SPOTS.some(d => d.id === spot.id);
+                const item = `
+                    <div class="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl text-xs border border-slate-200">
+                        <div>
+                            <p class="font-bold text-slate-800">${spot.name}</p>
+                            <p class="text-[10px] text-slate-400">緯度: ${spot.lat}, 経度: ${spot.lon}</p>
+                        </div>
+                        <div>
+                            ${!isDefault ? `<button onclick="deleteSpot('${spot.id}')" class="text-rose-500 hover:text-rose-700 px-2 py-1 font-medium"><i class="fa-solid fa-trash-can"></i></button>` : '<span class="text-[10px] text-slate-400 px-2">標準</span>'}
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', item);
+            });
+        }
+
+        function saveNewSpot(event) {
+            event.preventDefault();
+            const name = document.getElementById('new-spot-name').value;
+            const lat = parseFloat(document.getElementById('new-spot-lat').value);
+            const lon = parseFloat(document.getElementById('new-spot-lon').value);
+
+            const newSpot = {
+                id: 'spot_' + Date.now(),
+                name,
+                lat,
+                lon
+            };
+
+            spots.push(newSpot);
+            localStorage.setItem('shonan_surf_spots', JSON.stringify(spots));
+            
+            document.getElementById('spot-form').reset();
+            updateSpotDropdowns();
+            renderSpotsManagement();
+        }
+
+        function deleteSpot(id) {
+            if (spots.length <= 1) {
+                alert('最低1つのスポットが必要です。');
+                return;
+            }
+            spots = spots.filter(s => s.id !== id);
+            localStorage.setItem('shonan_surf_spots', JSON.stringify(spots));
+            if (currentSpot && currentSpot.id === id) {
+                currentSpot = spots[0];
+            }
+            updateSpotDropdowns();
+            renderSpotsManagement();
+            fetchForecastData();
+        }
+
+        function resetDefaultSpots() {
+            if (confirm('デフォルトの湘南スポット（由比ガ浜、鎌倉高校前、七里ケ浜、鵠沼海岸、逗子海岸）に戻しますか？')) {
+                spots = [...DEFAULT_SPOTS];
+                localStorage.setItem('shonan_surf_spots', JSON.stringify(spots));
+                currentSpot = spots[0];
+                updateSpotDropdowns();
+                renderSpotsManagement();
+                fetchForecastData();
+            }
+        }
+
+        // 記録モーダル制御
+        function openLogModal() {
+            document.getElementById('log-modal').classList.remove('hidden');
+        }
+
+        function closeLogModal() {
+            document.getElementById('log-modal').classList.add('hidden');
+        }
+
+        function applyCurrentForecastToForm() {
+            document.getElementById('form-spot').value = currentSpot.name;
+            document.getElementById('form-wave-size').value = 'ハラ・ムネ';
+            document.getElementById('form-wind-cond').value = '弱オフショア（面良し）';
+            
+            const btn = event.currentTarget;
+            const originalText = btn.innerText;
+            btn.innerText = '反映しました！';
+            btn.classList.add('bg-emerald-600');
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.classList.remove('bg-emerald-600');
+            }, 1500);
+        }
+
+        let currentImageBase64 = '';
+        function previewImage(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentImageBase64 = e.target.result;
+                    document.getElementById('image-preview').src = currentImageBase64;
+                    document.getElementById('image-preview-container').classList.remove('hidden');
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function saveLog(event) {
+            event.preventDefault();
+            
+            const newLog = {
+                id: Date.now(),
+                date: document.getElementById('form-date').value,
+                spot: document.getElementById('form-spot').value,
+                waveSize: document.getElementById('form-wave-size').value,
+                windCond: document.getElementById('form-wind-cond').value,
+                board: document.getElementById('form-board').value || '未設定',
+                memo: document.getElementById('form-memo').value,
+                photo: currentImageBase64 || null
+            };
+
+            let logs = JSON.parse(localStorage.getItem('shonan_surf_logs') || '[]');
+            logs.unshift(newLog);
+            localStorage.setItem('shonan_surf_logs', JSON.stringify(logs));
+
+            document.getElementById('log-form').reset();
+            document.getElementById('image-preview-container').classList.add('hidden');
+            currentImageBase64 = '';
+            initDatetimeField();
+            closeLogModal();
+            
+            loadLogs();
+            switchTab('log');
+        }
+
+        function loadLogs() {
+            const logs = JSON.parse(localStorage.getItem('shonan_surf_logs') || '[]');
+            const container = document.getElementById('log-list-container');
+
+            if (logs.length === 0) {
+                container.innerHTML = `
+                    <div class="bg-white rounded-2xl p-8 text-center border border-slate-100 shadow-sm">
+                        <i class="fa-solid fa-water text-3xl text-slate-300 mb-2"></i>
+                        <p class="text-xs text-slate-500 font-medium">まだセッションの記録がありません</p>
+                        <p class="text-[10px] text-slate-400 mt-1">「新規記録」ボタンから今日の海を記録しよう！</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = '';
+            logs.forEach(log => {
+                const formattedDate = log.date.replace('T', ' ');
+                const photoHtml = log.photo ? `<img src="${log.photo}" class="w-full h-40 object-cover rounded-xl mt-3 border border-slate-100">` : '';
+                
+                const card = `
+                    <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-3">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <span class="text-[10px] bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full font-medium">${log.spot}</span>
+                                <h4 class="font-bold text-sm text-slate-800 mt-1">${log.waveSize} / ${log.windCond}</h4>
+                            </div>
+                            <span class="text-[10px] text-slate-400">${formattedDate}</span>
+                        </div>
+                        
+                        <div class="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl space-y-1">
+                            <p><strong class="text-slate-700">ボード:</strong> ${log.board}</p>
+                            ${log.memo ? `<p><strong class="text-slate-700">メモ:</strong> ${log.memo}</p>` : ''}
+                        </div>
+
+                        ${photoHtml}
+
+                        <div class="flex justify-end pt-1">
+                            <button onclick="deleteLog(${log.id})" class="text-rose-500 hover:text-rose-700 text-[10px] font-medium flex items-center space-x-1">
+                                <i class="fa-solid fa-trash-can"></i>
+                                <span>削除</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', card);
+            });
+        }
+
+        function deleteLog(id) {
+            if (confirm('この記録を削除してもよろしいですか？')) {
+                let logs = JSON.parse(localStorage.getItem('shonan_surf_logs') || '[]');
+                logs = logs.filter(log => log.id !== id);
+                localStorage.setItem('shonan_surf_logs', JSON.stringify(logs));
+                loadLogs();
+            }
+        }
+
+        function clearAllData() {
+            if (confirm('全てのセッション記録が削除されます。よろしいですか？')) {
+                localStorage.removeItem('shonan_surf_logs');
+                loadLogs();
+            }
+        }
+
+        // ===== スポット映像カメラ関連 =====
+
+        // スポットIDに対応するYouTubeライブ・過去映像情報
+        const SPOT_CAMERAS = {
+            yuigahama: {
+                name: '鎌倉・由比ガ浜',
+                live: [
+                    { label: '由比ガ浜 ライブカメラ', searchQuery: '由比ガ浜 ライブカメラ', ytSearch: 'https://www.youtube.com/results?search_query=%E7%94%B1%E6%AF%94%E3%82%AC%E6%B5%9C+%E3%83%A9%E3%82%A4%E3%83%96%E3%82%AB%E3%83%A1%E3%83%A9&sp=EgJAAQ%3D%3D' },
+                ],
+                past: [
+                    { label: '由比ガ浜 波情報アーカイブ', ytSearch: 'https://www.youtube.com/results?search_query=%E7%94%B1%E6%AF%94%E3%82%AC%E6%B5%9C+%E6%B3%A2%E6%83%85%E5%A0%B1' },
+                ]
+            },
+            kamakOko: {
+                name: '鎌倉高校前',
+                live: [
+                    { label: '七里ケ浜〜鎌倉 ライブカメラ', ytSearch: 'https://www.youtube.com/results?search_query=%E9%8E%8C%E5%80%89+%E3%82%B5%E3%83%BC%E3%83%95+%E3%83%A9%E3%82%A4%E3%83%96%E3%82%AB%E3%83%A1%E3%83%A9&sp=EgJAAQ%3D%3D' },
+                ],
+                past: [
+                    { label: '鎌倉高校前 波情報', ytSearch: 'https://www.youtube.com/results?search_query=%E9%8E%8C%E5%80%89%E9%AB%98%E6%A0%A1%E5%89%8D+%E6%B3%A2%E6%83%85%E5%A0%B1' },
+                ]
+            },
+            shichirigahama: {
+                name: '七里ケ浜',
+                live: [
+                    { label: '峰ヒルズcam（七里ケ浜24h配信）', ytSearch: 'https://www.youtube.com/results?search_query=%E5%B3%B0%E3%83%92%E3%83%AB%E3%82%BA+cam+%E4%B8%83%E9%87%8C%E3%82%B1%E6%B5%9C&sp=EgJAAQ%3D%3D' },
+                    { label: 'Live Camera Shonan Kamakura', ytSearch: 'https://www.youtube.com/results?search_query=Live+Camera+Shonan+Kamakura&sp=EgJAAQ%3D%3D' },
+                ],
+                past: [
+                    { label: '七里ケ浜 波情報アーカイブ', ytSearch: 'https://www.youtube.com/results?search_query=%E4%B8%83%E9%87%8C%E3%82%B1%E6%B5%9C+%E6%B3%A2%E6%83%85%E5%A0%B1' },
+                ]
+            },
+            kugenuma: {
+                name: '鵠沼海岸',
+                live: [
+                    { label: 'なみある？チャンネル（鵠沼24h）', ytSearch: 'https://www.youtube.com/results?search_query=%E3%81%AA%E3%81%BF%E3%81%82%E3%82%8B+%E9%B5%A0%E6%B2%BC&sp=EgJAAQ%3D%3D' },
+                ],
+                past: [
+                    { label: '鵠沼 波情報アーカイブ', ytSearch: 'https://www.youtube.com/results?search_query=%E9%B5%A0%E6%B2%BC+%E6%B3%A2%E6%83%85%E5%A0%B1' },
+                ]
+            }
+        };
+
+        function openCameraModal() {
+            const modal = document.getElementById('camera-modal');
+            modal.classList.remove('hidden');
+            loadCameraContent('live');
+        }
+
+        function closeCameraModal() {
+            document.getElementById('camera-modal').classList.add('hidden');
+        }
+
+        function switchCameraTab(tab) {
+            ['live', 'past'].forEach(t => {
+                document.getElementById('cam-tab-' + t).classList.toggle('bg-sky-600', t === tab);
+                document.getElementById('cam-tab-' + t).classList.toggle('text-white', t === tab);
+                document.getElementById('cam-tab-' + t).classList.toggle('text-slate-500', t !== tab);
+                document.getElementById('cam-tab-' + t).classList.toggle('bg-slate-100', t !== tab);
+            });
+            loadCameraContent(tab);
+        }
+
+        function loadCameraContent(tab) {
+            const container = document.getElementById('camera-content');
+            const spotId = currentSpot ? currentSpot.id : null;
+            const camData = SPOT_CAMERAS[spotId] || SPOT_CAMERAS['yuigahama'];
+            const items = tab === 'live' ? camData.live : camData.past;
+
+            const spotLabel = document.getElementById('camera-modal-spot');
+            if (spotLabel) spotLabel.textContent = camData.name;
+
+            container.innerHTML = '';
+
+            // 説明テキスト
+            const note = document.createElement('p');
+            note.className = 'text-[11px] text-slate-400 mb-3 leading-relaxed';
+            note.textContent = tab === 'live'
+                ? '📡 以下のリンクから現在のライブ映像をYouTubeで確認できます。配信状況は時間帯や天候により変動します。'
+                : '🎞️ 過去の波情報・映像をYouTubeで検索できます。同スポットの最近のサーフ動画も参考にどうぞ。';
+            container.appendChild(note);
+
+            items.forEach(item => {
+                const btn = document.createElement('a');
+                btn.href = item.ytSearch;
+                btn.target = '_blank';
+                btn.rel = 'noopener noreferrer';
+                btn.className = 'flex items-center justify-between w-full bg-slate-50 hover:bg-red-50 border border-slate-200 hover:border-red-300 rounded-xl px-3 py-3 mb-2 transition group';
+                btn.innerHTML = `
+                    <div class="flex items-center space-x-2.5">
+                        <div class="w-8 h-8 bg-red-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i class="fa-brands fa-youtube text-white text-sm"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-700 group-hover:text-red-600">${item.label}</p>
+                            <p class="text-[10px] text-slate-400">YouTubeで検索して開く</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-slate-300 group-hover:text-red-400 text-xs"></i>
+                `;
+                container.appendChild(btn);
+            });
+
+            // 追加: Google Maps ストリートビュー リンク
+            if (currentSpot) {
+                const mapsBtn = document.createElement('a');
+                mapsBtn.href = `https://www.google.com/maps?q=${currentSpot.lat},${currentSpot.lon}&layer=c&cbll=${currentSpot.lat},${currentSpot.lon}`;
+                mapsBtn.target = '_blank';
+                mapsBtn.rel = 'noopener noreferrer';
+                mapsBtn.className = 'flex items-center justify-between w-full bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl px-3 py-3 mb-2 transition group mt-1';
+                mapsBtn.innerHTML = `
+                    <div class="flex items-center space-x-2.5">
+                        <div class="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i class="fa-solid fa-street-view text-white text-sm"></i>
+                        </div>
+                        <div>
+                            <p class="text-xs font-bold text-slate-700 group-hover:text-blue-600">Google ストリートビュー</p>
+                            <p class="text-[10px] text-slate-400">スポット周辺の景色を確認する</p>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-slate-300 group-hover:text-blue-400 text-xs"></i>
+                `;
+                container.appendChild(mapsBtn);
+            }
+        }
+    </script>
+
+    <!-- カメラモーダル -->
+    <div id="camera-modal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+        <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] overflow-y-auto shadow-2xl">
+            <!-- ヘッダー -->
+            <div class="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex justify-between items-center z-10">
+                <div>
+                    <h3 class="font-bold text-base text-slate-800 flex items-center space-x-2">
+                        <i class="fa-solid fa-video text-rose-500"></i>
+                        <span>スポットの映像</span>
+                    </h3>
+                    <p id="camera-modal-spot" class="text-xs text-slate-400 mt-0.5"></p>
+                </div>
+                <button onclick="closeCameraModal()" class="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full flex items-center justify-center transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="px-5 py-4">
+                <!-- ライブ / 過去映像 タブ -->
+                <div class="flex space-x-2 mb-4 bg-slate-100 rounded-xl p-1">
+                    <button id="cam-tab-live" onclick="switchCameraTab('live')"
+                        class="flex-1 text-xs font-bold py-2 rounded-lg transition bg-sky-600 text-white">
+                        <i class="fa-solid fa-circle text-red-300 text-[8px] mr-1 animate-pulse"></i>ライブ映像
+                    </button>
+                    <button id="cam-tab-past" onclick="switchCameraTab('past')"
+                        class="flex-1 text-xs font-bold py-2 rounded-lg transition bg-slate-100 text-slate-500">
+                        <i class="fa-solid fa-clock-rotate-left mr-1"></i>過去の映像
+                    </button>
+                </div>
+
+                <!-- コンテンツ -->
+                <div id="camera-content">
+                    <!-- JSで動的生成 -->
+                </div>
+
+                <!-- 注意書き -->
+                <div class="mt-4 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                    <p class="text-[10px] text-amber-700 leading-relaxed">
+                        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+                        ライブ配信は配信者の都合により停止している場合があります。YouTubeで「<strong>スポット名 ライブカメラ</strong>」と検索して最新の配信枠をご確認ください。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
